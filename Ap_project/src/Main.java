@@ -4,18 +4,20 @@ import java.io.*;
 class Player 
 {
 	private double[] colour = new double[3];
-	private int[] gridSize = new int[2];
+	private static int[] gridSize = new int[2];
 	private String name;
-	
-	
-	Player(double[] colour,String name)
-	{
-		this.name=name;
-		this.colour=colour;
-	}
 	String getname()
 	{
 		return name;
+	}
+
+	private static String[][] grid;
+	
+	Player(double[] colour,String name,String[][] grid)
+	{
+		this.name=name;
+		this.colour=colour;
+		this.grid=grid;
 	}
 	double[] getColour()
 	{
@@ -34,15 +36,33 @@ class Player
 			gridSize[1] = 10;
 		}
 	}
-}
-class Setting
-{
-	private ArrayList<Player> playerData;
-	
-	Setting()
+	int[] getGridsize()
 	{
-		
+		return gridSize;
 	}
+	
+	void taketurn(int x,int y)
+	{
+		if((x==0 || x==gridSize[0]) && (y==0 || y==gridSize[1]))
+		{
+			
+		}
+		else if(x==0 || x==gridSize[0] || y==0 || y==gridSize[1])
+		{
+			
+		}
+		else
+		{
+			
+		}
+	}
+}
+
+class Game
+{
+	private String[][] grid;
+	private static ArrayList<Player> playerData;
+	private int[] gridSize;
 }
 public class Main {
 	
