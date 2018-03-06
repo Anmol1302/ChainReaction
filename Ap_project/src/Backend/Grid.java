@@ -1,15 +1,14 @@
 package Backend;
-//as soon as the player keeps getting eliminated skip his turn!
+
 import java.io.*;
 import java.util.ArrayList;
-import java.util.concurrent.TimeUnit;
 import javafx.scene.layout.StackPane;
-import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.scene.paint.PhongMaterial;
 import javafx.scene.shape.*;
 import javafx.scene.text.Font;
 import javafx.scene.text.Text;
+import javafx.scene.text.TextAlignment;
 import javafx.animation.Interpolator;
 import javafx.animation.ParallelTransition;
 import javafx.animation.RotateTransition;
@@ -17,15 +16,14 @@ import javafx.animation.Timeline;
 import javafx.animation.TranslateTransition;
 import javafx.event.ActionEvent;
 import javafx.event.EventHandler;
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.geometry.VPos;
 import javafx.scene.*;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
-import javafx.scene.layout.HBox;
 import javafx.scene.layout.Pane;
 import javafx.stage.Stage;
+import javafx.stage.WindowEvent;
 import javafx.util.Duration;
 
 public class Grid extends MainPage implements Serializable
@@ -33,19 +31,40 @@ public class Grid extends MainPage implements Serializable
 	private static final long serialVersionUID = 1L;
 	public static Stage gridStage;
 	private Pane root = new Pane();
-	public int[] gridSize;
+	public static int[] gridSize;
 	boolean playable;
 	public static ArrayList<Player> playerList;
 	public static Cell[][] grid;
-	public Player currentPlayer;
-	public static int playerturn= 0;
-	
-	public Grid(int[] gridSize, ArrayList<Player> playerList)
+	public static Player currentPlayer;
+	private static int count;
+	public static int playerturn;
+	public boolean gameResumed;
+	public static GameState lastState;
+	String[][] rawGrid;
+	public Grid(int[] gridSize, ArrayList<Player> playerList,int playerTurn,String[][] rawGrid,Player currentPlayer,boolean gameResumed)
 	{
-		this.gridSize= gridSize;
-		Grid.playerList= playerList;
+		Grid.gridSize= gridSize;
+		Grid.playerList= new ArrayList<Player>(playerList);
 		Grid.grid= new Cell[gridSize[0]][gridSize[1]];
+		Grid.currentPlayer=currentPlayer;
+		Grid.playerturn=playerTurn;
+		this.rawGrid = rawGrid;
+		this.gameResumed=gameResumed;
+		lastState = MainPage.curState;
+		count=0;
 	}
+	static int[] getgridSize()
+	{
+		return gridSize;
+	}
+	
+	/**
+	* The create content method 
+	* makes the whole GUI of the grid
+	* @author  Anmol Agarwal
+	* @version 1.0
+	* @since   18-11-2017
+	*/
 	
 	public Parent createContent(int[] gridSize, ArrayList<Player> playerList) throws FileNotFoundException
 	{
@@ -82,7 +101,7 @@ public class Grid extends MainPage implements Serializable
 				gridStage.close();
 				try 
 				{
-					Grid.main(MainPage.gridSize, MainPage.listPlayers);
+					Grid.main(MainPage.gridSize, MainPage.listPlayers,0,new String[MainPage.gridSize[0]][MainPage.gridSize[1]],MainPage.listPlayers.get(0),false);
 				}
 				catch (FileNotFoundException e) 
 				{
@@ -102,7 +121,26 @@ public class Grid extends MainPage implements Serializable
 			@Override
 			public void handle(ActionEvent event) 
 			{
-				gridStage.close();
+				System.out.println("Stage is closing");
+			    ObjectOutputStream writer = null;
+				try{
+		            	writer = new ObjectOutputStream(new FileOutputStream(new File("savedGame.txt")));
+		            	writer.writeObject(curState);
+		            }
+		        catch(IOException e){
+		        	
+		        }
+				finally
+				{
+					try 
+					{
+						writer.close();
+					} catch (IOException e) 
+					{
+						e.printStackTrace();
+					}
+					gridStage.close();
+				}
 			}
 		});
 		root.getChildren().add(exitBtn);
@@ -112,9 +150,68 @@ public class Grid extends MainPage implements Serializable
 		undoBtn.setLayoutX(340);
 		undoBtn.setLayoutY(10);
 		undoBtn.setMinWidth(100);
+		undoBtn.setOnAction(new EventHandler<ActionEvent>(){
+				
+				@Override
+				public void handle(ActionEvent event) 
+				{
+					gridStage.close();
+					try 
+					{	
+						MainPage.curState=lastState;
+						Grid.main(lastState.gridSize, lastState.activePlayers,lastState.playerTurn,lastState.grid,lastState.currentPlayer,lastState.gameResumed);
+					}
+					catch(NullPointerException | FileNotFoundException e)
+					{
+						event.consume();
+						try {
+							Grid.main(MainPage.gridSize, MainPage.listPlayers,0,new String[MainPage.gridSize[0]][MainPage.gridSize[1]],MainPage.listPlayers.get(0),false);
+						} catch (FileNotFoundException e1) {
+							// TODO Auto-generated catch block
+							e1.printStackTrace();
+						}
+					}
+				}
+		});
 		root.getChildren().add(undoBtn);
 		
+		gridStage.setOnCloseRequest(event -> {
+		    System.out.println("Stage is closing");
+		    ObjectOutputStream writer = null;
+			try{
+	            	writer = new ObjectOutputStream(new FileOutputStream(new File("savedGame.txt")));
+	            	writer.writeObject(curState);
+	            }
+	        catch(IOException e){
+	        	
+	        }
+			finally
+			{
+				try 
+				{
+					writer.close();
+				} catch (IOException e) 
+				{
+					e.printStackTrace();
+				}
+				gridStage.close();
+			}
+			
+		});
+		
 		//Add the cells
+		int orbSize=0;
+		int cellSize=0;
+		if(gridSize[0]==15)
+		{
+			orbSize=12;
+			cellSize=60;
+		}
+		else
+		{
+			orbSize=20;
+			cellSize=100;
+		}
 		for(int i=0 ; i<gridSize[0] ; i++)
 		{
 			for(int j=0 ; j<gridSize[1] ; j++)
@@ -131,37 +228,95 @@ public class Grid extends MainPage implements Serializable
 					Y = 75+(i * 100);
 				}
 				Cell box;
-				if((i==0 || i==gridSize[0]-1) && (j==0 || j==gridSize[1]-1))
+				if(!gameResumed)
 				{
-					box = new Cell(2,i,j,X,Y);
-					grid[i][j]=box;
+					
+					if((i==0 || i==gridSize[0]-1) && (j==0 || j==gridSize[1]-1))
+					{
+						box = new Cell(2,i,j,X,Y,orbSize,cellSize);
+						grid[i][j]=box;
+					}
+					else if(i==0 || i==gridSize[0]-1 || j==0 || j==gridSize[1]-1)
+					{
+						box = new Cell(3,i,j,X,Y,orbSize,cellSize);
+						grid[i][j]=box;
+					}
+					else
+					{
+						box = new Cell(4,i,j,X,Y,orbSize,cellSize);
+						grid[i][j]=box;
+					}
+					box.setTranslateX(X);
+	                box.setTranslateY(Y);
+					root.getChildren().add(box);
 				}
-				else if(i==0 || i==gridSize[0]-1 || j==0 || j==gridSize[1]-1)
+			}
+		}
+		if(gameResumed)
+		{
+			for(int i=0 ; i<gridSize[0] ; i++)
+			{
+				for(int j=0 ; j<gridSize[1] ; j++)
 				{
-					box = new Cell(3,i,j,X,Y);
-					grid[i][j]=box;
+					String[] cellData = rawGrid[i][j].split(" ");
+					if(cellData[0].equals("-1"))
+					{						
+						grid[i][j] = new Cell(Integer.parseInt(cellData[2]),i,j,Integer.parseInt(cellData[3]),Integer.parseInt(cellData[4]),orbSize,cellSize);
+						grid[i][j].setTranslateX(Integer.parseInt(cellData[3]));
+						grid[i][j].setTranslateY(Integer.parseInt(cellData[4]));
+						root.getChildren().add(grid[i][j]);
+						
+					}
+					else
+					{
+						grid[i][j] = new Cell(Integer.parseInt(cellData[2]),i,j,Integer.parseInt(cellData[3]),Integer.parseInt(cellData[4]),orbSize,cellSize);
+						grid[i][j].numOrbs = Integer.parseInt(cellData[1]);
+						grid[i][j].color = playerList.get(Integer.parseInt(cellData[0])).getHexColor();
+						grid[i][j].setTranslateX(Integer.parseInt(cellData[3]));
+						grid[i][j].setTranslateY(Integer.parseInt(cellData[4]));
+						grid[i][j].addBalls();
+						root.getChildren().add(grid[i][j]);
+					}
+					
 				}
-				else
-				{
-					box = new Cell(4,i,j,X,Y);
-					grid[i][j]=box;
-				}
-				box.setTranslateX(X);
-                box.setTranslateY(Y);
-                
-                root.getChildren().add(box);
 			}
 		}
 		return root;
 	}
-
+	/**
+	* The save Game method updates the curState object by overwriting it
+	* @author  Anmol Agarwal
+	* @version 1.0
+	* @since   18-11-2017
+	*/
+	
+	public static void saveGame(String[][] grid)
+	{
+		String[][] test = new  String[Grid.gridSize[0]][Grid.gridSize[1]];
+		for(int i=0 ; i<Grid.gridSize[0] ; i++)
+		{
+			for(int j=0 ; j<Grid.gridSize[1] ; j++)
+			{
+				test[i][j] = grid[i][j];
+			}
+		}
+		MainPage.curState = new GameState(Grid.gridSize,Grid.playerList,Grid.playerturn,test,Grid.currentPlayer,true);
+	}
+	
+	/**
+	* Cell class contains all the data about a particular cell of the grid
+	* @author  Anmol Agarwal
+	* @version 1.0
+	* @since   18-11-2017
+	*/
+	
 	public class Cell extends StackPane
 	{
 		int criticalMass;
 		int orbSize;
 		int cellSize;
 		boolean isEmpty;
-		Color color;
+		String color;
 		Group orb;
 		int numOrbs=0;
 		int[] coordinate = new int[2];
@@ -169,7 +324,7 @@ public class Grid extends MainPage implements Serializable
 		int Y;
 		ArrayList<Cell> neighbours;
 		Rectangle box;
-		Cell(int criticalMass,int x,int y,int X,int Y)
+		Cell(int criticalMass,int x,int y,int X,int Y,int orbSize,int cellSize)
 		{
 			orb = new Group();
 			coordinate[0]=x;
@@ -179,19 +334,11 @@ public class Grid extends MainPage implements Serializable
 			this.criticalMass=criticalMass;
 			isEmpty=true;
 			neighbours = new ArrayList<Cell>();
-			if(gridSize[0]==15)
-			{
-				cellSize = 60;
-				orbSize = 12;
-			}
-			else
-			{
-				cellSize = 100;
-				orbSize = 20;
-			}
+			this.orbSize=orbSize;
+			this.cellSize=cellSize;
 			box = new Rectangle(cellSize,cellSize);
 			box.setFill(null);
-			box.setStroke(playerList.get(0).getColor());
+			box.setStroke(Color.valueOf(playerList.get(0).getHexColor()));
 			box.setStrokeWidth(2);
 			setAlignment(Pos.CENTER);
 			getChildren().add(box);
@@ -199,16 +346,150 @@ public class Grid extends MainPage implements Serializable
 			setOnMouseClicked(event -> 
 			{
 				currentPlayer= playerList.get(playerturn);
-				if(this.color== currentPlayer.getColor() || this.color== null)
+				if(this.color==currentPlayer.getHexColor() || this.color== null)
 				{
-					this.color= currentPlayer.getColor();//okay
+					this.color= currentPlayer.getHexColor();//okay
+					if(Grid.playerturn >= Grid.playerList.size()-1)
+					{
+						Grid.playerturn= 0;
+						if(Grid.playerList.get(0).flag!=1)
+						{
+							for(int i=0; i<Grid.playerList.size(); i++)
+							{
+								Grid.playerList.get(i).flag= 1;//means one round has been completed! okay
+							}
+						}
+						
+					}
+					else
+					{
+						Grid.playerturn++;
+					}
 					currentPlayer.takeTurn(this);
 				}	
             });
 			getChildren().add(orb);
 		}
 		
-		public ArrayList<Cell> getNeighbour()//okay
+		/**
+		* addballs() gets called through undo or resume game to add the balls into the grid
+		* @author  Anmol Agarwal
+		* @version 1.0
+		* @since   18-11-2017
+		*/
+		
+		public void addBalls()
+		{
+			orb.getChildren().clear();
+			if(numOrbs==1)
+			{
+				Sphere sphere = new Sphere(orbSize);
+				sphere.setMaterial(new PhongMaterial(Color.valueOf(this.color)));
+				orb.getChildren().add(sphere);
+			}
+			else if(numOrbs==2)
+			{
+				Sphere sphere_1 = new Sphere(orbSize);
+				sphere_1.setMaterial(new PhongMaterial(Color.valueOf(color)));
+				sphere_1.setTranslateX((cellSize - (3.5)*(orbSize))/2 + orbSize);
+				Sphere sphere_2 = new Sphere(orbSize);
+				sphere_2.setMaterial(new PhongMaterial(Color.valueOf(color)));
+				sphere_2.setTranslateX((cellSize - (3.5)*(orbSize))/2 + (2.5)*orbSize);
+				orb.getChildren().addAll(sphere_1,sphere_2);
+					
+			}
+			else if(numOrbs==3)
+			{
+				Sphere sphere_3 = new Sphere(orbSize);
+				sphere_3.setMaterial(new PhongMaterial(Color.valueOf(color)));
+				sphere_3.setTranslateX((cellSize - (3.5)*(orbSize))/2 + (2.5)*orbSize);
+				Sphere sphere_4 = new Sphere(orbSize);
+				sphere_4.setMaterial(new PhongMaterial(Color.valueOf(color)));
+				sphere_4.setTranslateX((cellSize - (3.5)*(orbSize))/2 + orbSize);
+				Sphere sphere_5 = new Sphere(orbSize);
+				sphere_5.setMaterial(new PhongMaterial(Color.valueOf(color)));
+				sphere_5.setTranslateX((cellSize - (3.5)*(orbSize))/2 + (1.75)*orbSize);
+				sphere_5.setTranslateY(cellSize/4);
+				orb.getChildren().addAll(sphere_3,sphere_4,sphere_5);
+			}
+			RotateTransition rotater = new RotateTransition();
+			if(numOrbs==this.criticalMass-1)
+				rotater.setDuration(Duration.seconds(2));
+			else
+				rotater.setDuration(Duration.seconds(8));
+			rotater.setNode(orb);
+			rotater.setFromAngle(0);
+			rotater.setToAngle(360);
+			rotater.setAutoReverse(false);
+			rotater.setCycleCount(Timeline.INDEFINITE);
+			rotater.setInterpolator(Interpolator.LINEAR);
+			rotater.play();	
+		}
+		
+		/**
+		* addOrbs() gets called every time a player takes a turn and a ball needs to be added in the cell
+		* @author  Anmol Agarwal
+		* @version 1.0
+		* @since   18-11-2017
+		*/
+		
+		public void addOrb()
+		{
+			orb.getChildren().clear();
+			if(numOrbs==0)
+			{
+				Sphere sphere = new Sphere(orbSize);
+				sphere.setMaterial(new PhongMaterial(Color.valueOf(this.color)));
+				orb.getChildren().add(sphere);
+			}
+			else if(numOrbs==1)
+			{
+				Sphere sphere_1 = new Sphere(orbSize);
+				sphere_1.setMaterial(new PhongMaterial(Color.valueOf(color)));
+				sphere_1.setTranslateX((cellSize - (3.5)*(orbSize))/2 + orbSize);
+				Sphere sphere_2 = new Sphere(orbSize);
+				sphere_2.setMaterial(new PhongMaterial(Color.valueOf(color)));
+				sphere_2.setTranslateX((cellSize - (3.5)*(orbSize))/2 + (2.5)*orbSize);
+				orb.getChildren().addAll(sphere_1,sphere_2);
+					
+			}
+			else if(numOrbs==2)
+			{
+				Sphere sphere_3 = new Sphere(orbSize);
+				sphere_3.setMaterial(new PhongMaterial(Color.valueOf(color)));
+				sphere_3.setTranslateX((cellSize - (3.5)*(orbSize))/2 + (2.5)*orbSize);
+				Sphere sphere_4 = new Sphere(orbSize);
+				sphere_4.setMaterial(new PhongMaterial(Color.valueOf(color)));
+				sphere_4.setTranslateX((cellSize - (3.5)*(orbSize))/2 + orbSize);
+				Sphere sphere_5 = new Sphere(orbSize);
+				sphere_5.setMaterial(new PhongMaterial(Color.valueOf(color)));
+				sphere_5.setTranslateX((cellSize - (3.5)*(orbSize))/2 + (1.75)*orbSize);
+				sphere_5.setTranslateY(cellSize/4);
+				orb.getChildren().addAll(sphere_3,sphere_4,sphere_5);
+			}
+			numOrbs++;
+			RotateTransition rotater = new RotateTransition();
+			if(numOrbs==this.criticalMass-1)
+				rotater.setDuration(Duration.seconds(2));
+			else
+				rotater.setDuration(Duration.seconds(8));
+			rotater.setNode(orb);
+			rotater.setFromAngle(0);
+			rotater.setToAngle(360);
+			rotater.setAutoReverse(false);
+			rotater.setCycleCount(Timeline.INDEFINITE);
+			rotater.setInterpolator(Interpolator.LINEAR);
+			rotater.play();	
+		}
+		
+		/**
+		* getNeighbour() returns ArrayList<Cell> which are adjacent to a particular cell
+		* @author  Rajat Bansal
+		* @version 1.0
+		* @since   18-11-2017
+		*/
+		
+		public ArrayList<Cell> getNeighbour()
 		{
 			ArrayList<Cell> list= new ArrayList<Cell>();
 			if((this.coordinate[1]==0))
@@ -279,7 +560,7 @@ public class Grid extends MainPage implements Serializable
 					list.add(grid[this.coordinate[0]][this.coordinate[1]-1]);
 				}
 			}
-			else//means it lies somewhere in between
+			else
 			{
 				list.add(grid[this.coordinate[0]][this.coordinate[1]+1]);
 				list.add(grid[this.coordinate[0]+1][this.coordinate[1]]);
@@ -288,6 +569,14 @@ public class Grid extends MainPage implements Serializable
 			}
 			return list;
 		}
+		
+		/**
+		* translate is called to show tansition animation onto the neighbouring cells 
+		* when the number of balls in that cell increase its critical mass
+		* @author  Anmol Agarwal
+		* @version 1.0
+		* @since   18-11-2017
+		*/
 		
 		public void translate(Player cur,ArrayList<Cell> neighbours,Color color)
 		{
@@ -326,66 +615,27 @@ public class Grid extends MainPage implements Serializable
 				}
 				if(endOfAnimation)
 				{
-					removeDeadPlayers(cur);
+					doAtEndOfAnimation(cur);
+					
 				}
 				
-			});
-			
-		}
-		public void addOrb()
-		{
-			orb.getChildren().clear();
-			if(numOrbs==0)
-			{
-				Sphere sphere = new Sphere(orbSize);
-				sphere.setMaterial(new PhongMaterial(this.color));
-				orb.getChildren().add(sphere);
-			}
-			else if(numOrbs==1)
-			{
-				Sphere sphere_1 = new Sphere(orbSize);
-				sphere_1.setMaterial(new PhongMaterial(this.color));
-				sphere_1.setTranslateX((cellSize - (3.5)*(orbSize))/2 + orbSize);
-				Sphere sphere_2 = new Sphere(orbSize);
-				sphere_2.setMaterial(new PhongMaterial(this.color));
-				sphere_2.setTranslateX((cellSize - (3.5)*(orbSize))/2 + (2.5)*orbSize);
-				orb.getChildren().addAll(sphere_1,sphere_2);
-					
-			}
-			else if(numOrbs==2)
-			{
-				Sphere sphere_3 = new Sphere(orbSize);
-				sphere_3.setMaterial(new PhongMaterial(this.color));
-				sphere_3.setTranslateX((cellSize - (3.5)*(orbSize))/2 + (2.5)*orbSize);
-				Sphere sphere_4 = new Sphere(orbSize);
-				sphere_4.setMaterial(new PhongMaterial(this.color));
-				sphere_4.setTranslateX((cellSize - (3.5)*(orbSize))/2 + orbSize);
-				Sphere sphere_5 = new Sphere(orbSize);
-				sphere_5.setMaterial(new PhongMaterial(this.color));
-				sphere_5.setTranslateX((cellSize - (3.5)*(orbSize))/2 + (1.75)*orbSize);
-				sphere_5.setTranslateY(cellSize/4);
-				orb.getChildren().addAll(sphere_3,sphere_4,sphere_5);
-			}
-			numOrbs++;
-			RotateTransition rotater = new RotateTransition();
-			if(numOrbs==this.criticalMass-1)
-				rotater.setDuration(Duration.seconds(2));
-			else
-				rotater.setDuration(Duration.seconds(8));
-			rotater.setNode(orb);
-			rotater.setFromAngle(0);
-			rotater.setToAngle(360);
-			rotater.setAutoReverse(false);
-			rotater.setCycleCount(Timeline.INDEFINITE);
-			rotater.setInterpolator(Interpolator.LINEAR);
-			rotater.play();	
+			});	
 		}
 	}
+	
+	/**
+	* checkColor() returns the player whose balls are present in that cell
+	* when the number of balls in that cell increase its critical mass
+	* @author  Anmol Agarwal
+	* @version 1.0
+	* @since   18-11-2017
+	*/
+	
 	public static int checkColor(Cell cell){
 		int result= 0;
 		for(int i=0; i<Grid.playerList.size(); i++)
 		{
-			if(cell.color== Grid.playerList.get(i).getColor())
+			if(cell.color== Grid.playerList.get(i).getHexColor())
 			{
 				result= i;
 				break;
@@ -393,7 +643,16 @@ public class Grid extends MainPage implements Serializable
 		}
 		return result;
 	}
-	public static void removeDeadPlayers(Player cur)
+	
+	/**
+	* At the end of transition animation this function checks whether to remove a player
+	* and removes it. It also checks whether game has ended and calls endGame()
+	* @author  Anmol Agarwal
+	* @version 1.0
+	* @since   18-11-2017
+	*/
+	
+	public static void doAtEndOfAnimation(Player cur)
 	{
 		int[] freqarray= new int[Grid.playerList.size()];
 		for(int i=0; i<Grid.grid.length; i++)
@@ -406,6 +665,7 @@ public class Grid extends MainPage implements Serializable
 				}
 			}
 		}
+		//Removes dead players
 		for(int i=Grid.playerList.size()-1; i>=0; i--)
 		{
 			if(freqarray[i]== 0)
@@ -413,47 +673,158 @@ public class Grid extends MainPage implements Serializable
 				Grid.playerList.remove(i);
 			}
 		}
-		if(playerList.size()==1)
+		if(playerturn>=Grid.playerList.size())
 		{
+			playerturn=0;
+		}
+		//Checks for winner
+		if(playerList.size()==1 && count==0)
+		{
+			count++;
 			endGame(cur);
 		}
+		
 	}
+	
+	/**
+	* This function ends the game and declares the winner
+	* @author  Anmol Agarwal
+	* @version 1.0
+	* @since   18-11-2017
+	*/
+	
 	public static void endGame(Player cur)
 	{	
-		Stage winstage= new Stage();
-		winstage.setTitle("Game Over");
-		VBox vbox= new VBox();
-		HBox hbox= new HBox();
-		Label label= new Label(cur.playerName + " has won the Game!!!");
-		label.setFont(Font.font(28));
-		label.setAlignment(Pos.CENTER);
-		label.setWrapText(true);
-        hbox.setPadding(new Insets(20, 20, 20, 20));
-		label.setTextFill(cur.getColor());
-		label.setStyle("-fx-font-weight: bold");
-		hbox.getChildren().add(label);
-		vbox.getChildren().add(hbox);
-		Scene scene= new Scene(vbox, 300, 250);
-		vbox.setStyle("-fx-background-color: #D3D3D3");
-		winstage.setScene(scene);
-		winstage.show();
-		try 
-		{
-			TimeUnit.SECONDS.sleep(2);
-		} 
-		catch (InterruptedException e) 
-		{
-			
-			e.printStackTrace();
-		}
+		Stage winStage= new Stage();
+		winStage.setTitle("Game Over");
+		Pane endGamePane = new Pane();
+		endGamePane.setPrefSize(300,300);
+		endGamePane.setStyle("-fx-background-color: #D3D3D3");
+		Label endMessage = new Label(cur.playerName + " has won the Game!!!");
+		endMessage.setFont(Font.font("Roboto",20));
+		endMessage.setTranslateX(20);
+		endMessage.setTranslateY(100);
+		endMessage.setTextAlignment(TextAlignment.CENTER);
+		endMessage.setAlignment(Pos.CENTER);
+		endMessage.setTextFill(Color.valueOf(cur.getHexColor()));
+		endMessage.setWrapText(true);
+		endGamePane.getChildren().add(endMessage);
 		
+		//Add buttons
+		Button newGameBtn = new Button();
+		newGameBtn.setText("New Game");
+		newGameBtn.setLayoutX(50);
+		newGameBtn.setLayoutY(200);
+		newGameBtn.setMinWidth(75);
+		newGameBtn.setOnAction(new EventHandler<ActionEvent>(){
+
+			@Override
+			public void handle(ActionEvent arg0) 
+			{
+				winStage.close();
+				gridStage.close();
+				try 
+				{
+					Grid.main(MainPage.gridSize, MainPage.listPlayers,0,new String[MainPage.gridSize[0]][MainPage.gridSize[1]],MainPage.listPlayers.get(0),false);
+				}
+				catch (FileNotFoundException e) 
+				{
+					e.printStackTrace();
+				}
+			}
+		});
+		endGamePane.getChildren().add(newGameBtn);
+				
+		Button exitBtn = new Button();
+		exitBtn.setText("Exit");
+		exitBtn.setLayoutX(175);
+		exitBtn.setLayoutY(200);
+		exitBtn.setMinWidth(75);
+		exitBtn.setOnAction(new EventHandler<ActionEvent>(){
+
+			@Override
+			public void handle(ActionEvent event) 
+			{
+				System.out.println("Stage is closing");
+			    ObjectOutputStream writer = null;
+			    MainPage.curState=null;
+			    Grid.lastState=null;
+				try{
+		            	writer = new ObjectOutputStream(new FileOutputStream(new File("savedGame.txt")));
+		            	writer.writeObject(curState);
+		            }
+		        catch(IOException e){
+		        	
+		        }
+				finally
+				{
+					try 
+					{
+						writer.close();
+					} catch (IOException e) 
+					{
+						e.printStackTrace();
+					}
+					winStage.close();
+					gridStage.close();
+				}
+			}
+		});
+		endGamePane.getChildren().add(exitBtn);
 		
+		winStage.setOnCloseRequest(new EventHandler<WindowEvent>() {
+		    @Override
+		    public void handle(WindowEvent event) 
+		    {
+
+		        // consume event
+		        event.consume();
+		    }
+		});
+		
+		Scene scene = new Scene(endGamePane);
+		winStage.setScene(scene);
+		winStage.show();
 	}
-	public static void main(int[] gridSize, ArrayList<Player> playerList) throws FileNotFoundException
+	
+	/**
+	* main function to create a gridStage fill content into it and display it
+	* @author  Anmol Agarwal
+	* @version 1.0
+	* @since   18-11-2017
+	*/
+	public static void main(int[] gridSize, ArrayList<Player> playerList,int playerTurn,String[][] grid,Player currentPlayer,boolean gameResumed) throws FileNotFoundException
 	{
 		gridStage= new Stage();
-		Grid mainGrid= new Grid(gridSize, playerList);
+		Grid mainGrid= new Grid(gridSize, playerList,playerTurn,grid,currentPlayer,gameResumed);
 		gridStage.setScene(new Scene(mainGrid.createContent(gridSize, playerList)));
         gridStage.show();
+	}
+	
+	/**
+	* converts the Cell[][] to a String[][] that is serializable
+	* @author  Anmol Agarwal
+	* @version 1.0
+	* @since   18-11-2017
+	*/
+	
+	public static String[][] getrawGrid(Cell[][] grid) 
+	{
+		String[][] rawGrid = new String[grid.length][grid[0].length];
+		for(int i=0 ; i<grid.length ; i++)
+		{
+			for(int j=0 ; j<grid[0].length ; j++)
+			{
+				if(grid[i][j].color==null)
+				{
+					rawGrid[i][j]="-1 0"+" "+grid[i][j].criticalMass+" "+grid[i][j].X+" "+grid[i][j].Y;
+				}
+				else
+				{
+					rawGrid[i][j]=""+checkColor(grid[i][j])+" "+grid[i][j].numOrbs+" "+grid[i][j].criticalMass+" "+grid[i][j].X+" "+grid[i][j].Y;
+				}
+			}
+		}
+		return rawGrid;
 	}
 }
